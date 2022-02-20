@@ -3,6 +3,7 @@
 
 #include "OpenCV_DisparityMap.h"
 #include<opencv2/opencv.hpp>
+
 using namespace std;
 using namespace cv;
 
@@ -48,22 +49,23 @@ vector<Point2f> cornerHarris_myShell(Mat src)
             }
         }
     }
-    imshow("Corners detected", dst_norm_scaled);
-    imshow("Corners detected 2", src);
+    //  imshow("Corners detected", dst_norm_scaled);
+    //  imshow("Corners detected 2", src);
     waitKey();
     return mass;
 }
 
 int main()
 {
-	Mat im1 = readImage("1.jpg");
-	Mat im2 = readImage("2.jpg");
+	Mat im1 = readImage("11.jpg");
+	Mat im2 = readImage("12.jpg");
 
     vector<Point2f> mass1, mass2;
     mass1 = cornerHarris_myShell(im1);
     mass2 = cornerHarris_myShell(im2);
     cout << mass1 << endl;
     cout << mass2 << endl;
+    mass1 = mass2;
     if (mass1.size() < 8 || mass2.size() < 8)
     {
         cout << "Vector of features too low" << endl;
@@ -73,7 +75,14 @@ int main()
     }
 
     Mat F = findFundamentalMat(mass1, mass2, FM_RANSAC);
+    cout << F << endl;
 
+    Mat newIm1, newIm2;
+    stereoRectifyUncalibrated(mass1, mass2, F, im1.size(),newIm1,newIm2);
+
+    Mat dist;
+    absdiff(newIm2, newIm1, dist);
+    imshow(dist);
     waitKey();
 	system("pause");
 	return 0;
