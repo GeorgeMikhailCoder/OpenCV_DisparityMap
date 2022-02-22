@@ -6,9 +6,11 @@
 
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
+#include <opencv2/ximgproc/disparity_filter.hpp>
 
 using namespace std;
 using namespace cv;
+using namespace ximgproc;
 
 Mat readImage(string name)
 {
@@ -29,9 +31,10 @@ vector<Point2f> cornerHarris_myShell(Mat src)
     //cvtColor(src, src_gray, COLOR_BGR2GRAY);
     src_gray = src;
     int blockSize = 4;
-    int SobelSize = 15;
+    int SobelSize = 5;
     double k = 0.04;
-    int thresh = 180;
+    int thresh = 150;
+    
 
     Mat dst = Mat::zeros(src.size(), CV_32FC1);
     cornerHarris(src_gray, dst, blockSize, SobelSize, k);
@@ -59,10 +62,6 @@ vector<Point2f> cornerHarris_myShell(Mat src)
     return mass;
 }
 
-
-
-
-
 template<typename tp>
 void printStdVec(vector<tp> errors, string header)
 {
@@ -77,22 +76,84 @@ void printStdVec(vector<tp> errors, string header)
     cout << endl;
 }
 
+Mat disparity(const Mat& left, const Mat& right)
+{
+    Mat left_for_matcher, right_for_matcher;
+
+    int max_disp = 100;
+    max_disp /= 2;
+    if (max_disp % 16 != 0)
+        max_disp += 16 - (max_disp % 16);
+    resize(left, left_for_matcher, Size(), 0.5, 0.5, INTER_LINEAR_EXACT);
+    resize(right, right_for_matcher, Size(), 0.5, 0.5, INTER_LINEAR_EXACT);
+
+
+    Mat left_disp, right_disp;
+    Ptr<StereoBM> left_matcher = StereoBM::create(max_disp);
+    Ptr<DisparityWLSFilter> wls_filter = createDisparityWLSFilter(left_matcher);
+    Ptr<StereoMatcher> right_matcher = createRightMatcher(left_matcher);
+
+    left_matcher->compute(left_for_matcher, right_for_matcher, left_disp);
+    right_matcher->compute(right_for_matcher, left_for_matcher, right_disp);
+
+    Mat filtered_disp, solved_disp, solved_filtered_disp;
+
+    wls_filter->setLambda(2.0);
+    wls_filter->setSigmaColor(1.0);
+
+    wls_filter->filter(left_disp, left, filtered_disp, right_disp);
+
+    double vis_mult = 1.0;
+    Mat raw_disp_vis;
+    getDisparityVis(left_disp, raw_disp_vis, vis_mult);
+    //  namedWindow("raw disparity", WINDOW_AUTOSIZE);
+    //  imshow("raw disparity", raw_disp_vis);
+
+    Mat filtered_disp_vis;
+    getDisparityVis(filtered_disp, filtered_disp_vis, vis_mult);
+    namedWindow("filtered disparity", WINDOW_AUTOSIZE);
+    imshow("filtered disparity", filtered_disp_vis);
+
+    if (!solved_disp.empty())
+    {
+        Mat solved_disp_vis;
+        getDisparityVis(solved_disp, solved_disp_vis, vis_mult);
+        namedWindow("solved disparity", WINDOW_AUTOSIZE);
+        imshow("solved disparity", solved_disp_vis);
+        Mat solved_filtered_disp_vis;
+        getDisparityVis(solved_filtered_disp, solved_filtered_disp_vis, vis_mult);
+        namedWindow("solved wls disparity", WINDOW_AUTOSIZE);
+        imshow("solved wls disparity", solved_filtered_disp_vis);
+    }
+    return raw_disp_vis;
+}
+
 int main()
 {
     
-	Mat im1 = readImage("51.jpg");
-	Mat im2 = readImage("52.jpg");
+	Mat im1 = readImage("31.jpg");
+	Mat im2 = readImage("32.jpg");
     
     vector<Point2f> mass1, mass2;
     mass1 = cornerHarris_myShell(im1);
     mass2 = cornerHarris_myShell(im2);
     
     system("cls");
-    //  cout <<"mass1 = "<< mass1 << endl;
-    //  cout <<"mass2 = "<< mass2 << endl;
-
     cout << "Size of mass1 = " << mass1.size() << ",  Size of mass2 = " << mass2.size() << endl;
     
+    for (int i = 0; i < mass1.size(); i++)
+    {
+        Point p = mass1[i];
+        circle(im1, p, 5, Scalar(0), 2, 8, 0);
+    }
+
+    for (int i = 0; i < mass2.size(); i++)
+    {
+        Point p = mass2[i];
+        circle(im2, p, 5, Scalar(0), 2, 8, 0);
+    }
+    
+
     if (mass1.size() < 8 || mass2.size() < 8)
     {
         cout << "Vector of features too low" << endl;
@@ -105,49 +166,41 @@ int main()
     Mat status;
     calcOpticalFlowPyrLK(im1, im2, mass1, mass2, status, errors, Size(21,21), 3);
     cout << "Size of mass1 = " << mass1.size() << ",  Size of mass2 = " << mass2.size() << endl;
-    //  cout << "status " << status.t() << endl;
-    //  printStdVec(errors, "errors");
-    
-    
 
-    
-    vector<Point2f> mass1F, mass2F;
-    
-    mass1F = mass1;
-    mass2F = mass2;
-
-    //  for (int i = 0; i < errors.size(); i++)
-    //      if (errors[i] < 10)
-    //      {
-    //          mass1F.push_back(mass1[i]);
-    //          mass2F.push_back(mass2[i]);
-    //      }
-    //  
-    //  cout << "Mass1F = " << mass1F << endl;
-    //  cout << "Mass2F = " << mass2F << endl;
-    
+    for (int i = 0; i < mass1.size(); i++)
+    {
+        Point p = mass1[i];
+        circle(im1, p, 5, Scalar(0), 2, 8, 0);
+    }
 
 
-    Mat F = findFundamentalMat(mass1F, mass2F, FM_RANSAC,3,0.99);
-    
+    for (int i = 0; i < mass2.size(); i++)
+    {
+        Point p = mass2[i];
+        circle(im2, p, 5, Scalar(0), 2, 8, 0);
+    }
+    //  imshow("im1", im1);
+    //  imshow("im2", im2);
 
+
+    Mat F = findFundamentalMat(mass1, mass2, FM_RANSAC,3,0.99);
     
-    cout << "Im1 size = " << im1.size() << "  Im2 size = " << im2.size() << endl;
     Mat H1, H2;
-    stereoRectifyUncalibrated(mass1F, mass2F, F, im1.size(),H1,H2,5);
+    stereoRectifyUncalibrated(mass1, mass2, F, im1.size(),H1,H2,5);
 
     Mat newIm1, newIm2, newIm3;
     
     warpPerspective(im1, newIm1, H1, im1.size(), INTER_LINEAR|WARP_INVERSE_MAP, BORDER_REPLICATE);
     warpPerspective(im2, newIm2, H2, im1.size(), INTER_LINEAR|WARP_INVERSE_MAP, BORDER_REPLICATE);
-
     warpPerspective(im2, newIm3, H2*H1.inv(), im1.size(), INTER_LINEAR | WARP_INVERSE_MAP, BORDER_REPLICATE);
 
-    imshow("im1", im1);
-    imshow("im2", im2);
+    disparity(newIm1, newIm2);
+    
+    //  imshow("im1", im1);
+    //  imshow("im2", im2);
     imshow("newIm1", newIm1);
     imshow("newIm2", newIm2);
-    imshow("newIm3", newIm3);
+    //  imshow("newIm3", newIm3);
 
     waitKey();
 	system("pause");
